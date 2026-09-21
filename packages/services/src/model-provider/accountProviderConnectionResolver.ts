@@ -7,8 +7,12 @@ import type {
   ProviderConfigSnapshot,
   ProviderSource,
 } from "@zcode/provider";
-import { AccountProviderService, createAccountProviderConfigResolver } from "@zcode/provider";
 import {
+  AccountProviderService,
+  createAccountProviderConfigResolver,
+} from "@zcode/provider";
+import {
+  createCodexAccountProviderId,
   type ApiClient,
   type ProviderFamilyConnectionSelectionSettings,
   type ProviderFamilyDomain,
@@ -32,6 +36,9 @@ export interface AccountProviderConnectionSettings {
   readonly unresolvedFamilies?: readonly ProviderFamilyDomain[];
 }
 
+/** Codex per-model 规则只覆盖 optionSpecs.values；请求方言由执行后端自己承担。 */
+const CODEX_REASONING_OPTION_MAP_NOOP = "{}";
+
 export interface AccountProviderFamilyAvailabilityInput {
   readonly family: ProviderFamilyDomain;
   readonly providers: readonly CodingPlanAvailabilityProvider[];
@@ -41,6 +48,23 @@ export interface AccountProviderFamilyAvailabilityInput {
 export type AccountProviderFamilyAvailabilityResolver = (
   input: AccountProviderFamilyAvailabilityInput,
 ) => Promise<Partial<Record<string, CodingPlanAvailabilityResult>>>;
+
+export interface CodexAccountRowFact {
+  readonly accountId: string;
+  readonly connected: boolean;
+  /** 账号的全部 runtime 模型（含用户关闭的）。 */
+  readonly models: readonly {
+    readonly id: string;
+    readonly defaultReasoningEffort: string | null;
+    readonly supportedReasoningEfforts: readonly string[];
+  }[];
+  /** 用户 OFF 偏好（天然以 accountId+modelId 为键）。 */
+  readonly disabledModels: readonly string[];
+}
+
+export interface CodexProviderConnectionFact {
+  readonly accounts: readonly CodexAccountRowFact[];
+}
 
 export interface AccountProviderConnectionResolverOptions {
   readonly readSettings: () => Promise<AccountProviderConnectionSettings>;
@@ -52,6 +76,8 @@ export interface AccountProviderConnectionResolverOptions {
   ) => Promise<string | null>;
   readonly loadAccountIdentity: (family: ProviderFamilyDomain) => Promise<string | null>;
   readonly resolveFamilyAvailability: AccountProviderFamilyAvailabilityResolver;
+  /** Codex 账户连接事实（官方 runtime 投影）；未注入时 Codex provider 恒为不可用。 */
+  readonly resolveCodexConnection?: () => Promise<CodexProviderConnectionFact>;
 }
 
 export interface CodingPlanFamilyAvailabilityResolverOptions {
@@ -152,6 +178,52 @@ export function createAccountProviderConnectionResolver(
     const scopes = new Map<string, string>();
     for (const [providerId, config] of configuredProviders.entries()) {
       const access = config.access;
+      if (access?.type === "codex-account") {
+        // Codex 是多账号事实：base 行只做家族聚合（无模型、永不 executable），
+        // 每个 connected 账号展开为独立 provider 行 account:openai-codex:<uuid>。
+        // toggle OFF 通过 per-row 规则 enabled:false 表达，模型成员保持完整。
+        const fact = options.resolveCodexConnection
+          ? await options
+              .resolveCodexConnection()
+              .catch((): CodexProviderConnectionFact => ({ accounts: [] }))
+          : { accounts: [] };
+        const connectedAccounts = fact.accounts.filter((account) => account.connected);
+        connections.push({
+          providerId,
+          ...(connectedAccounts.length > 0
+            ? {
+                status: "available" as const,
+                codexAccountRows: connectedAccounts.map((account) => {
+                  const rowProviderId = createCodexAccountProviderId(account.accountId);
+                  const disabled = new Set(account.disabledModels);
+                  return {
+                    accountId: account.accountId,
+                    providerId: rowProviderId,
+                    models: account.models.map((model) => model.id),
+                    providerModelRules: account.models.map((model) => ({
+                      providerId: rowProviderId,
+                      modelId: model.id,
+                      config: {
+                        enabled: !disabled.has(model.id),
+                        ...(model.supportedReasoningEfforts.length === 0
+                          ? {}
+                          : {
+                              optionSpecs: {
+                                reasoningLevel: {
+                                  values: [...model.supportedReasoningEfforts],
+                                  map: CODEX_REASONING_OPTION_MAP_NOOP,
+                                },
+                              },
+                            }),
+                      },
+                    })),
+                  };
+                }),
+              }
+            : { status: "unavailable" as const, unavailableReason: "not-connected" as const }),
+        });
+        continue;
+      }
       if (access?.type !== "zhipu-account") continue;
       if (!access.accountType || !access.mode) {
         connections.push({ providerId, status: "unavailable" });
@@ -342,3 +414,6 @@ export async function resolveCurrentAccountAccess(input: {
     planKind: selection.kind,
   };
 }
+
+
+

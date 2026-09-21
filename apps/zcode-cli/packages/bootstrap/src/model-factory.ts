@@ -5,6 +5,7 @@ import {
   type AiSdkModelExecutionConfig,
   type EnvRecord,
 } from "@zcode/adapters/model";
+import type { CodexModelExecution } from "@zcode/adapters/model";
 import type { Logger, ModelStatusSink } from "@zcode/contracts";
 
 interface CreateModelAdapterBaseOptions {
@@ -14,6 +15,8 @@ interface CreateModelAdapterBaseOptions {
   modelIoFullRetentionEnabled?: boolean;
   streamIdleTimeoutMs?: number;
   statusSink?: ModelStatusSink;
+  /** apiType = "codex-app-server" 的执行后端（Host 账户服务之外独立的 runtime 内实例）。 */
+  codexExecution?: CodexModelExecution;
 }
 
 export type CreateModelAdapterOptions = CreateModelAdapterBaseOptions & {
@@ -26,6 +29,7 @@ export function createModelAdapter(options: CreateModelAdapterOptions): AiSdkMod
   }
   return new AiSdkModelAdapter({
     ...options.executionConfig,
+    codexExecution: options.codexExecution,
     debugDir: options.modelIoDir,
     env: options.env,
     logger: options.logger,

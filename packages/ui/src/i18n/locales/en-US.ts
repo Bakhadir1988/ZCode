@@ -2398,6 +2398,28 @@ const enUS: Record<string, string> = {
   "settings.plugins.toggle.failed": "Couldn't update {plugin}. Try again.",
   "settings.modelProviderDescription":
     "Manage custom model providers. Once configured, they can be selected during chat.",
+  "settings.modelProvider.codex.title": "OpenAI Codex",
+  "settings.modelProvider.codex.description": "Connect your ChatGPT account to use Codex.",
+  "settings.modelProvider.codex.connecting": "Waiting for ChatGPT authorization…",
+  "settings.modelProvider.codex.connectedWithChatgpt": "Connected with ChatGPT",
+  "settings.modelProvider.codex.cancelLogin": "Cancel",
+  "settings.modelProvider.codex.loginFailed": "ChatGPT sign-in failed. Try again.",
+  "settings.modelProvider.codex.accounts": "Accounts",
+  "settings.modelProvider.codex.addAccount": "Add account",
+  "settings.modelProvider.codex.manageAccounts": "Manage accounts",
+  "settings.modelProvider.codex.emptyState": "No ChatGPT accounts connected.",
+  "settings.modelProvider.codex.disconnectAccount": "Disconnect {label}",
+  "settings.modelProvider.codex.defaultBadge": "Default",
+  "settings.modelProvider.codex.disabledBadge": "Disabled",
+  "settings.modelProvider.codex.accountEnabled": "Enabled",
+  "settings.modelProvider.codex.accountEnabledLabel": "Toggle availability for {label}",
+  "settings.modelProvider.codex.setDefault": "Set as default",
+  "settings.modelProvider.codex.setDefaultLabel": "Set {label} as default",
+  "settings.modelProvider.codex.defaultHint":
+    "The default account is used for new chats. Disabled accounts stay connected but are hidden from the picker; every enabled account stays selectable per chat.",
+  "settings.modelProvider.codex.modelToggle": "Toggle {model} for {account}",
+  "settings.modelProvider.codex.modelsFootnote":
+    "Models come from the official Codex runtime and cannot be added manually. Turned-off models stay hidden from the chat picker.",
   "settings.modelProvider.add": "Add provider",
   "settings.modelProvider.createCustomProvider": "Create custom provider",
   "settings.modelProvider.templateCreateFailed":
@@ -2449,6 +2471,7 @@ const enUS: Record<string, string> = {
   "settings.modelProvider.apiFormat.short.anthropicMessages": "Anthropic",
   "settings.modelProvider.apiFormat.title.chatCompletions": "Chat completions",
   "settings.modelProvider.apiFormat.title.responses": "Responses",
+  "settings.modelProvider.apiFormat.title.codexAppServer": "OpenAI Codex (App Server)",
   "settings.modelProvider.apiFormat.title.anthropicMessages": "Anthropic messages",
   "settings.modelProvider.apiKey": "API key",
   "settings.modelProvider.apiKeyPlaceholder": "Enter API key",
@@ -6483,3 +6506,4 @@ const enUS: Record<string, string> = {
 };
 
 export default enUS;
+

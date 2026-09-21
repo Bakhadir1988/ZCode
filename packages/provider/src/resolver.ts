@@ -133,6 +133,8 @@ export interface ProviderConfigResolverInput {
   readonly personalModels: ModelConfigRules;
   readonly accountProviders: ProviderConfigMap;
   readonly accountStates?: AccountProviderStates;
+  /** Account 层 per-model 能力覆盖（builtin 之上、personal 之下）。 */
+  readonly accountModels?: ModelConfigRules;
   readonly personalProviderOrder?: readonly ProviderId[];
 }
 
@@ -181,11 +183,32 @@ export interface ProviderConfigResolution {
 
 export class ProviderConfigResolver {
   resolve(input: ProviderConfigResolverInput): ProviderConfigResolution {
+    // Codex 按账号展开的行（account:openai-codex:<accountId>）不在 Built-in，Account Overlay
+    // 只携带连接事实与模型成员。api/logo/group/providerName 是家族 base 行的 Built-in 身份，
+    // 在解析期继承；拷贝进 overlay 会违反 Account Schema（wire 层整包拒绝），并绕开
+    // Built-in 对 Provider 身份的唯一所有权。
+    const codexFamilyBase = resolveCodexFamilyBaseRule(input.zcodeBuiltinProviders);
     const accountProviders = new ProviderConfigMap(
       input.accountProviders
         .entries()
-        .filter(([providerId]) => input.zcodeBuiltinProviders.has(providerId))
-        .map(([providerId, config]) => [providerId, config.withoutGroup()] as const),
+        .filter(
+          ([providerId, config]) =>
+            input.zcodeBuiltinProviders.has(providerId) ||
+            config.access?.type === "codex-account",
+        )
+        .map(([providerId, config]) => {
+          if (input.zcodeBuiltinProviders.has(providerId) || !codexFamilyBase) {
+            return [providerId, config.withoutGroup()] as const;
+          }
+          const base = codexFamilyBase;
+          return {
+            providerId,
+            ...(base.templateId === undefined ? {} : { templateId: base.templateId }),
+            ...(base.providerName === undefined ? {} : { providerName: base.providerName }),
+            ...(base.enabled === undefined ? {} : { enabled: base.enabled }),
+            config: base.config.overlay(config.withoutGroup()),
+          } satisfies ProviderConfigRule;
+        }),
     );
     const concreteBuiltinProviders = input.zcodeBuiltinProviders.overlay(accountProviders);
     const providerTemplates = input.zcodeBuiltinProviderTemplates;
@@ -209,6 +232,7 @@ export class ProviderConfigResolver {
     const effectiveModelRules = ModelConfigRules.composeEffective(
       input.zcodeBuiltinModelRules,
       input.personalModels,
+      input.accountModels,
     );
     const issues: ConfigValidationIssue[] = [];
     const resolvedProviders: ResolvedProvider[] = [];
@@ -218,7 +242,11 @@ export class ProviderConfigResolver {
       const rule = effectiveProviders.getRule(providerId)!;
       const { config, providerName } = rule;
       // 账号不再支持总禁用；旧覆盖值不能让无开关的账号永久失效，其他资格仍正常校验。
-      const enabled = config.access?.type === "zhipu-account" || (rule.enabled ?? true);
+      // Codex 账户同理：开关属于连接事实（access.connected），不是用户 disable 开关。
+      const enabled =
+        config.access?.type === "zhipu-account" ||
+        config.access?.type === "codex-account" ||
+        (rule.enabled ?? true);
       const providerPath = ["providers", providerId];
       const registryProviderResult = createRegistryProviderConfig(config, providerPath);
       const providerIssues: ConfigValidationIssue[] = registryProviderResult.ok
@@ -246,8 +274,7 @@ export class ProviderConfigResolver {
         personalIdsInOrder,
         config.modelOrder ?? [],
       );
-      const accessEntitled =
-        config.access?.type !== "zhipu-account" || config.access.entitled === true;
+      const accessEntitled = resolveProviderAccessEntitled(config.access);
       // 账号权益与当前连接是两件事。非当前账号仍保留设置展示，不向普通 Registry 发布模型。
       // Off-Peak 不定义 current，沿用其独立调度、隐藏和鉴权规则。
       const accountCurrent = input.accountStates?.[providerId]?.current !== false;
@@ -352,6 +379,26 @@ function uniqueInOrder(modelIds: readonly ModelId[]): readonly ModelId[] {
   });
 }
 
+/** Access 层的执行资格：账号族看连接/权益事实，普通 API Key 看完整性校验（默认放行）。 */
+function resolveProviderAccessEntitled(access: ProviderConfig["access"]): boolean {
+  if (access?.type === "zhipu-account") return access.entitled === true;
+  if (access?.type === "codex-account") return access.connected === true;
+  return true;
+}
+
+/**
+ * Codex 家族在 Built-in 的唯一 base 行（access.type = codex-account）。
+ * base 缺失或不唯一时不继承，账号行保持裸 Overlay，由完整性校验给出可恢复问题。
+ */
+function resolveCodexFamilyBaseRule(
+  zcodeBuiltinProviders: ProviderConfigMap,
+): ProviderConfigRule | undefined {
+  const bases = zcodeBuiltinProviders
+    .rules()
+    .filter((rule) => rule.config.access?.type === "codex-account");
+  return bases.length === 1 ? bases[0] : undefined;
+}
+
 function resolveProviderOrder(
   input: ProviderConfigResolverInput,
   effectiveProviders: ProviderConfigMap,
@@ -369,8 +416,21 @@ function resolveProviderOrder(
   const personalIds = input.personalProviders
     .keys()
     .filter((providerId) => !builtinSet.has(providerId) && !familySet.has(providerId));
-  return [
+  // Account 层 Codex 按账号行（不在 builtin/personal）：стабильно после base 行，
+  // сортировка по id детерминирована между refresh.
+  const codexRowIds = sourceIds
+    .filter(
+      (providerId) =>
+        !builtinSet.has(providerId) &&
+        !familySet.has(providerId) &&
+        effectiveProviders.get(providerId)?.access?.type === "codex-account",
+    )
+    .sort();
+  const ordered = [
     ...familyIds,
     ...resolveOwnedOrder(builtinIds, personalIds, input.personalProviderOrder ?? []),
   ];
+  const baseCodexIndex = ordered.indexOf("account:openai-codex");
+  if (baseCodexIndex < 0) return [...ordered, ...codexRowIds];
+  return [...ordered.slice(0, baseCodexIndex + 1), ...codexRowIds, ...ordered.slice(baseCodexIndex + 1)];
 }

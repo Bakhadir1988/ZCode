@@ -4,6 +4,7 @@ import type { z } from "zod";
 import {
   completeApiKeyAccessDataSchema,
   completeZhipuAccountAccessDataSchema,
+  completeCodexAccountAccessDataSchema,
   completeProviderApiDataSchema,
   completeProviderConfigDataSchema,
   type providerApiTypeDataSchema,
@@ -13,6 +14,7 @@ import {
   type providerLogoDataSchema,
   type apiKeyAccessDataSchema,
   type zhipuAccountAccessDataSchema,
+  type codexAccountAccessDataSchema,
   type providerAccessDataSchema,
   type providerApiDataSchema,
   type providerConfigDataSchema,
@@ -111,9 +113,46 @@ export class ZhipuAccountAccessConfig extends ConfigOverlay<ZhipuAccountAccessCo
   }
 }
 
-export type ProviderAccessConfig = ApiKeyAccessConfig | ZhipuAccountAccessConfig;
+export type ProviderAccessConfig = ApiKeyAccessConfig | ZhipuAccountAccessConfig | CodexAccountAccessConfig;
 
 export type ProviderAccessConfigObject = Readonly<z.infer<typeof providerAccessDataSchema>>;
+
+export type CodexAccountAccessConfigInput = Omit<CodexAccountAccessConfigObject, "type">;
+
+export type CodexAccountAccessConfigObject = Readonly<
+  z.infer<typeof codexAccountAccessDataSchema>
+>;
+
+/** OpenAI Codex 账户访问：ZCode 只持有布尔连接事实，OAuth 凭据归官方 runtime。 */
+export class CodexAccountAccessConfig extends ConfigOverlay<CodexAccountAccessConfig> {
+  readonly type = "codex-account" as const;
+  readonly connected?: CodexAccountAccessConfigInput["connected"];
+
+  constructor(input: CodexAccountAccessConfigInput = {}) {
+    super();
+    this.connected = input.connected;
+    Object.freeze(this);
+  }
+
+  overlay(next: CodexAccountAccessConfig): CodexAccountAccessConfig {
+    return new CodexAccountAccessConfig({
+      connected: this.overlayValue(this.connected, next.connected),
+    });
+  }
+
+  validateComplete(path: readonly string[] = []): readonly ConfigValidationIssue[] {
+    return validateConfigSchema(completeCodexAccountAccessDataSchema, this.toJSON(), path);
+  }
+
+  toJSON(): CodexAccountAccessConfigObject {
+    return {
+      type: this.type,
+      ...objectWithoutUndefined({
+        connected: this.connected,
+      }),
+    };
+  }
+}
 
 /** 手动 Key 的编辑/保存共用能力判断，不把套餐 Key 误写成普通 API Key。 */
 export function isApiKeyAccess<T extends { readonly type: string }>(
@@ -505,6 +544,8 @@ function overlayProviderAccess(
       return current.overlay(next as ApiKeyAccessConfig);
     case "zhipu-account":
       return current.overlay(next as ZhipuAccountAccessConfig);
+    case "codex-account":
+      return current.overlay(next as CodexAccountAccessConfig);
   }
 }
 

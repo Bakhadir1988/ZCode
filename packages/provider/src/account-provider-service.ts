@@ -1,4 +1,5 @@
 import { ProviderConfigMap } from "./config/index.js";
+import type { ProviderModelConfigRuleData } from "./config/rule-data-schema.js";
 import type { AccountProviderStates } from "./account-provider-state.js";
 import {
   createFailClosedAccountProviderConfigSnapshot,
@@ -18,7 +19,11 @@ export interface AccountProviderResolveInput {
 
 export type AccountProviderResolver = (
   input: AccountProviderResolveInput,
-) => Promise<{ readonly providers: ProviderConfigMap; readonly states: AccountProviderStates }>;
+) => Promise<{
+  readonly providers: ProviderConfigMap;
+  readonly states: AccountProviderStates;
+  readonly providerModelRules?: readonly ProviderModelConfigRuleData[];
+}>;
 
 export interface AccountProviderServiceDependencies {
   readonly configSource: ProviderSource<ProviderConfigSnapshot>;
@@ -156,7 +161,7 @@ export class AccountProviderService implements ProviderSource<AccountProviderCon
       try {
         config = await this.#configSource.read();
         const configuredProviders = config.zcodeBuiltinProviders;
-        const { providers, states } = await this.#resolve({
+        const { providers, states, providerModelRules } = await this.#resolve({
           configRevision: config.zcodeBuiltinRevision,
           configuredProviders,
           previousProviders: latest?.providers ?? ProviderConfigMap.empty(),
@@ -182,6 +187,7 @@ export class AccountProviderService implements ProviderSource<AccountProviderCon
           basedOnZCodeBuiltinRevision,
           providers,
           states,
+          providerModelRules,
         );
         const revision = next.revision;
         if (latest?.revision === revision) {
@@ -238,3 +244,4 @@ export class AccountProviderService implements ProviderSource<AccountProviderCon
     if (this.#disposed) throw new Error("AccountProviderService 已 dispose");
   }
 }
+

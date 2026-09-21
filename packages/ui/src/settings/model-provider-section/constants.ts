@@ -214,6 +214,16 @@ export type ModelProviderNavItem =
     }
   | {
       key: string;
+      type: "codex";
+      label: string;
+      /** Base 行（logo 来源）；执行目标是按账号行。 */
+      provider: ProviderSettingsFormProvider | null;
+      /** 聚合连接态（任一账号 connected 即点亮），base 行本身永不 executable。 */
+      statusProvider?: Pick<ProviderSettingsFormProvider, "enabled" | "executable"> | null;
+      statusActive: boolean;
+    }
+  | {
+      key: string;
       type: "custom";
       label: string;
       provider: ProviderSettingsFormProvider;

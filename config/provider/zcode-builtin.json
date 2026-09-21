@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "revision": 30,
+  "revision": 31,
   "config": {
     "providerConfigRules": {
       "templateRules": [
@@ -689,6 +689,26 @@
         }
       ],
       "providerRules": [
+        {
+          "providerId": "account:openai-codex",
+          "providerName": "OpenAI Codex",
+          "config": {
+            "group": "codex-family",
+            "builtinModelIds": [],
+            "access": {
+              "type": "codex-account",
+              "connected": false
+            },
+            "api": {
+              "type": "codex-app-server",
+              "baseUrl": "app-server://codex"
+            },
+            "logo": {
+              "type": "builtin",
+              "key": "openai"
+            }
+          }
+        },
         {
           "providerId": "account:zai-individual-coding-plan",
           "providerName": "Z.AI Individual Coding Plan",
@@ -2529,6 +2549,22 @@
               },
               "maxOutputTokens": {
                 "map": "{'max_output_tokens': maxOutputTokens}"
+              }
+            }
+          }
+        },
+        {
+          "modelMatch": ".*",
+          "apiTypeMatch": "codex-app-server",
+          "config": {
+            "optionSpecs": {
+              "reasoningLevel": {
+                "values": ["low", "medium", "high", "xhigh", "max", "ultra"],
+                "map": "{}"
+              },
+              "maxOutputTokens": {
+                "max": 128000,
+                "map": "{}"
               }
             }
           }
@@ -6210,3 +6246,4 @@
     }
   }
 }
+

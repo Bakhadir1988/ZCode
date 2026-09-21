@@ -2,6 +2,7 @@ import {
   AccountProviderService,
   MutableAccountProviderConfigSource,
   parseAccountProviderConfigMap,
+  parseAccountProviderModelRulesData,
   type AccountProviderConfigSnapshot,
   type AccountProviderStates,
 } from "@zcode/provider";
@@ -195,6 +196,7 @@ export function parseProcessAccountProviderConfigSnapshot(input: {
   readonly revision: string;
   readonly basedOnZCodeBuiltinRevision: string;
   readonly providers: unknown;
+  readonly providerModelRules?: readonly unknown[];
   readonly states?: AccountProviderStates;
 }): AccountProviderConfigSnapshot {
   const revision = input.revision.trim();
@@ -215,11 +217,18 @@ export function parseProcessAccountProviderConfigSnapshot(input: {
       throw new Error(`Account State 缺少 current: ${providerId}`);
     }
   }
+  // Parsed through the @zcode/provider schema (incl. optionSpec map validation) so
+  // malformed account-layer model rules fail loudly here instead of corrupting the runtime.
+  const providerModelRules = parseAccountProviderModelRulesData(input.providerModelRules);
   return Object.freeze({
     revision,
     basedOnZCodeBuiltinRevision,
     providers,
     // 与 Overlay 属于同一快照；不能只更新 revision 却丢掉当前连接事实。
     ...(input.states ? { states: input.states } : {}),
+    ...(providerModelRules ? { providerModelRules } : {}),
   });
 }
+
+
+

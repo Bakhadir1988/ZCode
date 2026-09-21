@@ -16,6 +16,10 @@ export function createCustomProviderNodeKey(id: string): string {
   return `custom:${id}`;
 }
 
+export function createCodexProviderNodeKey(): string {
+  return "codex:openai-codex";
+}
+
 export function resolveModelProviderNavLogo(item: ModelProviderNavItem) {
   // 品牌主入口沿用 Start 导航 ID，但不能因此显示体验套餐图标。
   if (item.type === "preset") return item.logo;

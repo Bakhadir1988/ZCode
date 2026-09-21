@@ -375,9 +375,17 @@ export class ModelConfigRules {
     return new ModelConfigRules();
   }
 
-  /** Built-in 保留原层次和组内顺序；个人只包含普通/手动精确规则。 */
-  static composeEffective(builtin: ModelConfigRules, personal: ModelConfigRules): ModelConfigRules {
-    return new ModelConfigRules([...builtin.rules(), ...personal.rules().filter(isExactModelRule)]);
+  /** Built-in 保留原层次和组内顺序；Account/个人只包含精确规则，且个人覆盖 Account。 */
+  static composeEffective(
+    builtin: ModelConfigRules,
+    personal: ModelConfigRules,
+    account?: ModelConfigRules,
+  ): ModelConfigRules {
+    return new ModelConfigRules([
+      ...builtin.rules(),
+      ...(account?.rules().filter(isExactModelRule) ?? []),
+      ...personal.rules().filter(isExactModelRule),
+    ]);
   }
 
   rules(): readonly ModelConfigRule[] {
@@ -579,3 +587,4 @@ function objectWithoutUndefined<T extends object>(value: T): T {
     Object.entries(value).filter(([, fieldValue]) => fieldValue !== undefined),
   ) as T;
 }
+

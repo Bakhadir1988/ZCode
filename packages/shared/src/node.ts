@@ -21,3 +21,24 @@ export {
   type NodeSelfResourceSampler,
   type NodeSelfResourceSamplerOptions,
 } from "./node/nodeSelfResourceTelemetry.js";
+export {
+  CodexAppServerClient,
+  type CodexAppServerClientLogger,
+  type CodexAppServerClientOptions,
+  type CodexAppServerExitEvent,
+  type CodexAppServerNotification,
+  type CodexInitializeResult,
+} from "./node/codexAppServerClient.js";
+export {
+  CODEX_ACCOUNT_DIR_MARKER_FILE,
+  CODEX_HOME_ENV,
+  ZCODE_DATA_BASE_DIR_ENV,
+  isCodexAccountId,
+  isPathWithinDir,
+  readCodexAccountsRegistry,
+  resolveCodexAccountHomeDir,
+  resolveCodexAccountsDir,
+  resolveCodexAccountsFile,
+  resolveZCodeDataBaseDir,
+  type CodexAccountsRegistrySummary,
+} from "./node/codexAccountPaths.js";

@@ -6,6 +6,7 @@ import {
   type ModelConfigRules,
 } from "./config/index.js";
 import type { AccountProviderStates } from "./account-provider-state.js";
+import type { ProviderModelConfigRuleData } from "./config/rule-data-schema.js";
 
 export interface ProviderSource<TSnapshot> {
   read(): Promise<TSnapshot>;
@@ -29,6 +30,8 @@ export interface AccountProviderConfigSnapshot {
   readonly basedOnZCodeBuiltinRevision: string;
   readonly providers: ProviderConfigMap;
   readonly states?: AccountProviderStates;
+  /** Exact per-model capability overrides from the Account layer (keyed by providerId+modelId), e.g. Codex model/list reasoning efforts. */
+  readonly providerModelRules?: readonly ProviderModelConfigRuleData[];
 }
 
 /** 首次 Account 事实尚未到达时，基于当前 Built-in 生成可发布的 fail-closed Overlay。 */
@@ -56,12 +59,14 @@ export function createAccountProviderConfigSnapshot(
   basedOnZCodeBuiltinRevision: string,
   providers: ProviderConfigMap,
   states?: AccountProviderStates,
+  providerModelRules?: readonly ProviderModelConfigRuleData[],
 ): AccountProviderConfigSnapshot {
   return Object.freeze({
-    revision: `account:${JSON.stringify([basedOnZCodeBuiltinRevision, providers.toJSON(), states])}`,
+    revision: `account:${JSON.stringify([basedOnZCodeBuiltinRevision, providers.toJSON(), states, providerModelRules])}`,
     basedOnZCodeBuiltinRevision,
     providers,
     ...(states ? { states } : {}),
+    ...(providerModelRules ? { providerModelRules } : {}),
   });
 }
 
@@ -106,5 +111,8 @@ function freezeAccountProviderConfigSnapshot(
     basedOnZCodeBuiltinRevision: snapshot.basedOnZCodeBuiltinRevision,
     providers: snapshot.providers,
     ...(snapshot.states ? { states: snapshot.states } : {}),
+    ...(snapshot.providerModelRules ? { providerModelRules: snapshot.providerModelRules } : {}),
   });
 }
+
+

@@ -1,10 +1,13 @@
 import {
+  CodexAccountAccessConfig,
   ProviderConfig,
   ProviderConfigMap,
   ZhipuAccountAccessConfig,
   type ModelId,
+  type ProviderConfigRule,
   type ProviderId,
 } from "./config/index.js";
+import type { ProviderModelConfigRuleData } from "./config/rule-data-schema.js";
 import type {
   AccountProviderResolveInput,
   AccountProviderResolver,
@@ -13,6 +16,14 @@ import type {
   AccountProviderState,
   AccountProviderUnavailableReason,
 } from "./account-provider-state.js";
+
+export interface CodexAccountRowConfig {
+  readonly accountId: string;
+  readonly providerId: ProviderId;
+  /** Полный runtime-список моделей строки (toggle OFF выражается правилами, не составом). */
+  readonly models: readonly ModelId[];
+  readonly providerModelRules: readonly ProviderModelConfigRuleData[];
+}
 
 export type AccountProviderConnectionResult = {
   /** 账号/组织身份变化后禁止沿用旧快照；仅用于本轮解析，不进入配置。 */
@@ -25,6 +36,10 @@ export type AccountProviderConnectionResult = {
       readonly providerId: ProviderId;
       readonly status: "available" | "pending";
       readonly models?: readonly ModelId[];
+      /** per-model 能力覆盖（optionSpecs），随 models 一起由 Account 层下发。 */
+      readonly providerModelRules?: readonly ProviderModelConfigRuleData[];
+      /** Codex 多账号展开：每个 connected 账号 —独立 provider 行。 */
+      readonly codexAccountRows?: readonly CodexAccountRowConfig[];
     }
   | {
       readonly providerId: ProviderId;
@@ -58,34 +73,85 @@ export function createAccountProviderConfigResolver(
       previousProviders: input.previousProviders,
       connections,
     });
-    const states: Record<string, AccountProviderState> = {};
-    for (const connection of connections) {
-      const previous = connection.resetPrevious
-        ? undefined
-        : input.previousStates?.[connection.providerId];
-      const access = providers.get(connection.providerId)?.access;
-      // unknown 仅保留上次展示事实；current 始终来自本轮选择，不能复活旧连接。
-      // 原因字段与 availability 同规则：unknown 沿用上一轮，避免一次网络抖动把
-      // "明确无权益"降级成原因未知。
-      const unavailableReason =
-        connection.status === "unknown" && previous
+  const providerModelRules = collectAccountProviderModelRules(connections);
+  const states: Record<string, AccountProviderState> = {};
+  const putState = (
+    providerId: string,
+    connection: AccountProviderConnectionResult,
+    overrides?: {
+      readonly availability?: AccountProviderState["availability"];
+      readonly entitled?: boolean;
+      readonly unavailableReason?: AccountProviderUnavailableReason;
+      readonly current?: boolean;
+      readonly connectionKey?: string;
+    },
+  ): void => {
+    const previous = connection.resetPrevious
+      ? undefined
+      : input.previousStates?.[providerId];
+    const access = providers.get(providerId)?.access;
+    const unavailableReason =
+      overrides?.unavailableReason !== undefined
+        ? overrides.unavailableReason
+        : connection.status === "unknown" && previous
           ? previous.unavailableReason
           : connection.status === "unavailable"
             ? connection.unavailableReason
             : undefined;
-      states[connection.providerId] = Object.freeze({
-        ...(connection.status === "unknown" ? previous : {}),
-        availability:
-          connection.status === "unknown" && previous ? previous.availability : connection.status,
-        entitled: access?.type === "zhipu-account" && access.entitled === true,
-        ...(unavailableReason === undefined ? {} : { unavailableReason }),
-        ...(connection.current === undefined ? {} : { current: connection.current }),
-        connectionKey: connection.connectionKey,
-        ...(connection.effectiveAt === undefined ? {} : { effectiveAt: connection.effectiveAt }),
-      });
-    }
-    return Object.freeze({ providers, states: Object.freeze(states) });
+    states[providerId] = Object.freeze({
+      ...(connection.status === "unknown" ? previous : {}),
+      availability:
+        overrides?.availability ??
+        (connection.status === "unknown" && previous ? previous.availability : connection.status),
+      entitled:
+        overrides?.entitled ??
+        (access?.type === "zhipu-account"
+          ? access.entitled === true
+          : access?.type === "codex-account"
+            ? access.connected === true
+            : false),
+      ...(unavailableReason === undefined ? {} : { unavailableReason }),
+      ...(connection.current === undefined && overrides?.current === undefined
+        ? {}
+        : { current: overrides?.current ?? connection.current }),
+      connectionKey: overrides?.connectionKey ?? connection.connectionKey,
+      ...(connection.effectiveAt === undefined ? {} : { effectiveAt: connection.effectiveAt }),
+    });
   };
+  for (const connection of connections) {
+    putState(connection.providerId, connection);
+    // Codex 按账号行展开为独立执行目标；各行 current=true，但 kind=ordinary
+    // 不触发 effective-selection 重路由，可见性由 executable 决定。
+    if (connection.status === "available" || connection.status === "pending") {
+      for (const row of connection.codexAccountRows ?? []) {
+        putState(row.providerId, connection, {
+          availability: connection.status,
+          entitled: true,
+          current: true,
+          connectionKey: row.accountId,
+        });
+      }
+    }
+  }
+    return Object.freeze({
+      providers,
+      states: Object.freeze(states),
+      ...(providerModelRules ? { providerModelRules } : {}),
+    });
+  };
+}
+
+function collectAccountProviderModelRules(
+  connections: readonly AccountProviderConnectionResult[],
+): readonly ProviderModelConfigRuleData[] | undefined {
+  const rules = connections.flatMap((connection) => {
+    if (connection.status !== "available" && connection.status !== "pending") return [];
+    return [
+      ...(connection.providerModelRules ?? []),
+      ...(connection.codexAccountRows ?? []).flatMap((row) => row.providerModelRules),
+    ];
+  });
+  return rules.length > 0 ? rules : undefined;
 }
 
 /** 把账号连接结果转换为 Registry 使用的第三层 Account Provider Config。 */
@@ -93,9 +159,38 @@ export function resolveAccountProviderConfigs(
   input: ResolveAccountProviderConfigsInput,
 ): ProviderConfigMap {
   const connectionByProviderId = indexConnections(input.configuredProviders, input.connections);
-  const resolved: Array<readonly [ProviderId, ProviderConfig]> = [];
+  const resolved: Array<ProviderConfigRule | readonly [ProviderId, ProviderConfig]> = [];
   for (const [providerId, configured] of input.configuredProviders.entries()) {
     const access = configured.access;
+    if (access?.type === "codex-account") {
+      const connection = connectionByProviderId.get(providerId) ?? {
+        providerId,
+        status: "unknown" as const,
+      };
+      // Base 行只做家族聚合（无模型、永不 executable）；执行目标按账号行展开。
+      resolved.push([
+        providerId,
+        new ProviderConfig({
+          access: new CodexAccountAccessConfig({ connected: connection.status === "available" }),
+        }),
+      ]);
+      if (connection.status === "available" || connection.status === "pending") {
+        for (const row of connection.codexAccountRows ?? []) {
+          resolved.push({
+            providerId: row.providerId,
+            // Account Overlay 只携带本层事实：连接状态 + 模型成员。api/logo/group/providerName
+            // 是家族 base 行的 Built-in 身份，由 ProviderConfigResolver 在解析期继承；
+            // 拷贝进 overlay 会违反 Account Schema（wire 层整包拒绝），并绕开 Built-in 对
+            // Provider 身份的唯一所有权。
+            config: new ProviderConfig({
+              access: new CodexAccountAccessConfig({ connected: true }),
+              builtinModelIds: normalizeModelIds(row.models),
+            }),
+          });
+        }
+      }
+      continue;
+    }
     if (access?.type !== "zhipu-account") continue;
     const connection = connectionByProviderId.get(providerId) ?? {
       providerId,
@@ -166,7 +261,9 @@ function indexConnections(
 }
 
 function isAccountConstrainedProvider(config: ProviderConfig): boolean {
-  return config.access?.type === "zhipu-account";
+  return (
+    config.access?.type === "zhipu-account" || config.access?.type === "codex-account"
+  );
 }
 
 function normalizeModelIds(values: readonly ModelId[] | null | undefined): readonly ModelId[] {

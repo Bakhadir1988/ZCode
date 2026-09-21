@@ -17,6 +17,7 @@ import {
   IConversationShareService,
   IFileWatcherService,
   IOAuthService,
+  ICodexService,
   IModelSelectionService,
   IProviderSettingsService,
   IProviderProvisioningTargetService,
@@ -68,6 +69,9 @@ export class RemoteServiceAccess implements IServiceAccessor {
   readonly conversationShareService: IConversationShareService;
   readonly fileWatcherService: IFileWatcherService;
   readonly oauthService: IOAuthService;
+  // codexService 在远端 workspace host 可能未注册；代理恒创建（懒请求），
+  // 缺失时的调用失败由 UI 层捕获降级（与其它 lazy channel 一致）。
+  readonly codexService: ICodexService;
   readonly providerSettingsService: IProviderSettingsService;
   readonly modelSelectionService: IModelSelectionService;
   /** Host-only target proxy；不属于 IServiceAccessor，避免向 Renderer 暴露 Secret 写入接口。 */
@@ -147,6 +151,9 @@ export class RemoteServiceAccess implements IServiceAccessor {
     );
     this.oauthService = ProxyChannel.toService<IOAuthService>(
       channelClient.getChannel(IOAuthService.channelName),
+    );
+    this.codexService = ProxyChannel.toService<ICodexService>(
+      channelClient.getChannel(ICodexService.channelName),
     );
     this.providerSettingsService = ProxyChannel.toService<IProviderSettingsService>(
       channelClient.getChannel(IProviderSettingsService.channelName),

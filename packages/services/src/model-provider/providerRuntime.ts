@@ -37,6 +37,8 @@ export interface ProviderRuntimeDependencies {
   readonly testConnectivity?: ProviderSettingsConnectivityTester;
   readonly modelSelectionConfiguredDefaultSource?: ModelSelectionConfiguredDefaultSource;
   readonly disposeModelSelectionConfiguredDefaultSource?: () => void;
+  /** Codex 新会话默认账号；仅重映射指向 codex 家族的 configured default。 */
+  readonly resolveCodexActiveAccountId?: () => Promise<string | null>;
 }
 
 interface RefreshableProviderSource<TSnapshot> extends ProviderSource<TSnapshot> {
@@ -110,6 +112,9 @@ export class ProviderRuntime {
       createNodeModelSelectionFacade(this.registryService),
       ensureReady,
       dependencies.modelSelectionConfiguredDefaultSource,
+      dependencies.resolveCodexActiveAccountId
+        ? { resolveCodexActiveAccountId: dependencies.resolveCodexActiveAccountId }
+        : {},
     );
     this.modelSelection = this.#modelSelectionRuntime;
   }

@@ -5,7 +5,11 @@ import {
   type Provider,
   type ProviderModel,
 } from "@zcode/provider";
-import type { ZCodeModelOption } from "@zcode/shared";
+import {
+  CODEX_BASE_PROVIDER_ID,
+  parseCodexProviderAccountId,
+  type ZCodeModelOption,
+} from "@zcode/shared";
 import type { ProviderRegistryModelSource } from "./provider-registry-model-runtime.js";
 
 export interface ResolvedRegistrySelection {
@@ -141,6 +145,43 @@ export function createRegistrySelectionProtocolError(
         `Reasoning effort "${validation.reasoningLevel}" is not supported by ${validation.providerId}/${validation.modelId}`,
       );
   }
+}
+
+/**
+ * Codex 多账号后 base 行（account:openai-codex）只是家族聚合，不再进入 Registry；
+ * 旧会话保存的 base 选择必须在严格校验之前重映射到 active 账号行，否则选择永远
+ * 无法绑定，执行层的 base→active 回退也永远不可达。
+ *
+ * modelId 在目标行缺失时取行内首个模型；reasoning 档位仅在目标行支持时保留，
+ * 不支持时直接丢弃（与 providerFacadeServices 的 configured-default remap 同语义），
+ * 不人为挑最高/最低档——目标行不携带模型的 defaultReasoningEffort，强制选档只会
+ * 把恢复的会话悄悄绑到最贵 effort。缺档位选择走既有 reasoning-level-missing →
+ * unbound 恢复路径。非 base 选择与无可用账号行时原样返回，交给既有的
+ * unbound / stale-selection 流程（可恢复，不抛错）。
+ */
+export function remapLegacyCodexProviderSelection(
+  registry: ProviderRegistryModelSource,
+  selection: ModelSelection,
+  activeAccountId: string | null,
+): ModelSelection {
+  if (selection.providerId !== CODEX_BASE_PROVIDER_ID) return selection;
+  const rows = registry
+    .getView()
+    .providers.filter((provider) => parseCodexProviderAccountId(provider.providerId) !== null);
+  const row = activeAccountId
+    ? (rows.find((provider) => parseCodexProviderAccountId(provider.providerId) === activeAccountId) ??
+      rows[0])
+    : rows[0];
+  const model = row && (row.models.find((item) => item.modelId === selection.modelId) ?? row.models[0]);
+  if (!row || !model) return selection;
+  const requestedLevel = selection.options?.reasoningLevel;
+  const supportedLevels = model.config.optionSpecs.reasoningLevel.values;
+  const keepLevel = requestedLevel !== undefined && supportedLevels.includes(requestedLevel);
+  return {
+    providerId: row.providerId,
+    modelId: model.modelId,
+    ...(keepLevel ? { options: { ...selection.options } } : {}),
+  };
 }
 
 export function resolveRegistryModelSelection(

@@ -42,6 +42,7 @@ import {
   type ResolvedAiSdkModel,
 } from "./runner-runtime.js";
 import { createModel, type ModelExecutionRequest } from "./model.js";
+import { CodexModelExecution } from "./codex/codex-model-execution.js";
 
 export type { AiSdkModelRetryOptions } from "./retry-policy.js";
 export type {
@@ -65,6 +66,8 @@ export interface AiSdkModelAdapterOptions {
   statusSink?: ModelStatusSink;
   streamIdleTimeoutMs?: number;
   modelIoFullRetentionEnabled?: boolean;
+  /** apiType = "codex-app-server" 的执行后端；未注入时该 apiType 的 Model 创建会显式失败。 */
+  codexExecution?: CodexModelExecution;
 }
 
 export interface CreateAiSdkModelOptions {
@@ -87,6 +90,7 @@ export class AiSdkModelAdapter {
   private statusSink?: ModelStatusSink;
   private readonly streamIdleTimeoutMs: number;
   private modelIoFullRetentionEnabled: boolean;
+  private readonly codexExecution?: CodexModelExecution;
 
   constructor(options: AiSdkModelAdapterOptions) {
     this.execution = new AiSdkModelExecution(
@@ -107,6 +111,7 @@ export class AiSdkModelAdapter {
     this.statusSink = options.statusSink;
     this.streamIdleTimeoutMs = options.streamIdleTimeoutMs ?? DEFAULT_MODEL_STREAM_IDLE_TIMEOUT_MS;
     this.modelIoFullRetentionEnabled = options.modelIoFullRetentionEnabled ?? false;
+    this.codexExecution = options.codexExecution;
   }
 
   setModelIoFullRetentionEnabled(enabled: boolean): void {
@@ -136,6 +141,17 @@ export class AiSdkModelAdapter {
   }
 
   createModel(options: CreateAiSdkModelOptions): Model {
+    // Codex 走独立的 stateful 执行后端（官方 app-server thread/turn），不进入 AI SDK 管线。
+    if (options.providerConfig.api.type === "codex-app-server") {
+      if (!this.codexExecution) {
+        throw new ModelProtocolError(
+          ModelErrorCode.ProviderNotConfigured,
+          "Codex execution backend is not configured in this runtime",
+          { reason: "provider_not_configured", retryable: false },
+        );
+      }
+      return this.codexExecution.createModel(options);
+    }
     const boundResolution = this.execution.bindModel({
       providerId: options.providerId,
       modelId: options.modelId,

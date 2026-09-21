@@ -60,6 +60,7 @@ import {
 } from "@/lib/codingPlanFunnelTelemetry.js";
 import { useCodingPlanUpgradeDialog } from "@/settings/CodingPlanUpgradeDialogProvider.js";
 import { useProviderSettingsView } from "@/hooks/useProviderSettingsView.js";
+import { CodexProviderPanel } from "./CodexProviderPanel.js";
 import type { ProviderSettingsView } from "@zcode/services";
 import type { SavePersonalModelDraftInput } from "@zcode/provider";
 import { resolveAccountProviderInspectionAccess } from "@/lib/accountProviderAccess.js";
@@ -392,6 +393,10 @@ export function ModelProviderSectionDetail({
 
   if (!selectedNavItem) {
     return <ModelProviderLoadingCard loadingLabel={loadingLabel} />;
+  }
+
+  if (selectedNavItem.type === "codex") {
+    return <CodexProviderPanel />;
   }
 
   if (selectedNavItem.type === "preset") {

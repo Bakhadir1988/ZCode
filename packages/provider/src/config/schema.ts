@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { modelConfigDataSchema } from "@zcode/shared/model-config";
-import { providerConfigDataSchema, zhipuAccountAccessDataSchema } from "./provider-data-schema.js";
+import {
+  codexAccountAccessDataSchema,
+  providerConfigDataSchema,
+  zhipuAccountAccessDataSchema,
+} from "./provider-data-schema.js";
 import { ModelConfig, ModelConfigRules } from "./model-config.js";
 import {
   ApiKeyAccessConfig,
@@ -10,6 +14,7 @@ import {
   ProviderTemplate,
   ProviderTemplateMap,
   ZhipuAccountAccessConfig,
+  CodexAccountAccessConfig,
 } from "./provider-config.js";
 import {
   builtinModelConfigRulesSchema,
@@ -17,17 +22,47 @@ import {
   builtinProviderConfigRulesSchema,
   personalProviderConfigRulesSchema,
   providerConfigRuleSchema,
+  providerModelConfigRuleSchema,
   providerTemplateConfigRuleSchema,
   builtinProviderConfigRuleSchema,
   type ProviderConfigRuleData,
+  type ProviderModelConfigRuleData,
   type ProviderTemplateConfigRuleData,
 } from "./rule-data-schema.js";
 
 const accountProviderConfigSchema = providerConfigDataSchema
   .pick({ builtinModelIds: true })
   .extend({
-    access: zhipuAccountAccessDataSchema.pick({ type: true, entitled: true }).nullable().optional(),
+    access: z
+      .union([
+        zhipuAccountAccessDataSchema.pick({ type: true, entitled: true }),
+        codexAccountAccessDataSchema.pick({ type: true, connected: true }),
+      ])
+      .nullable()
+      .optional(),
   });
+
+/** Account 层下发的精确 per-model 数据形态；schema 校验后原样返回。 */
+export function parseAccountProviderModelRulesData(
+  input: unknown,
+): readonly ProviderModelConfigRuleData[] | undefined {
+  if (!Array.isArray(input) || input.length === 0) return undefined;
+  const parsed = z.array(providerModelConfigRuleSchema).parse(input);
+  return parsed.length > 0 ? parsed : undefined;
+}
+
+export function parseAccountProviderModelRules(
+  input: unknown,
+): ModelConfigRules {
+  const parsed = z.array(providerModelConfigRuleSchema).parse(input);
+  return new ModelConfigRules(
+    parsed.map((rule) => ({
+      ...rule,
+      type: "provider-model" as const,
+      config: createModelConfig(rule.config),
+    })),
+  );
+}
 
 export function parseProviderConfigMap(input: unknown): ProviderConfigMap {
   return createProviderRules(z.array(providerConfigRuleSchema).parse(input));
@@ -148,9 +183,11 @@ function createProviderConfig(config: z.infer<typeof providerConfigDataSchema>):
     access:
       config.access == null
         ? config.access
-        : config.access.type !== "zhipu-account"
-          ? new ApiKeyAccessConfig(config.access)
-          : new ZhipuAccountAccessConfig(config.access),
+        : config.access.type === "zhipu-account"
+          ? new ZhipuAccountAccessConfig(config.access)
+          : config.access.type === "codex-account"
+            ? new CodexAccountAccessConfig(config.access)
+            : new ApiKeyAccessConfig(config.access),
     api: config.api == null ? config.api : new ProviderApiConfig(config.api),
   });
 }
@@ -158,3 +195,8 @@ function createProviderConfig(config: z.infer<typeof providerConfigDataSchema>):
 function createModelConfig(config: z.infer<typeof modelConfigDataSchema>): ModelConfig {
   return ModelConfig.fromData(config);
 }
+
+
+
+
+

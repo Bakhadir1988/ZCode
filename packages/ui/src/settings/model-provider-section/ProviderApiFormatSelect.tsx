@@ -23,12 +23,15 @@ const PROVIDER_CONNECTION_API_FORMAT_PATHS: Record<ProviderApiType, string> = {
   "anthropic-messages": "/v1/messages",
   "openai-chat-completions": "/chat/completions",
   "openai-responses": "/responses",
+  // Codex 不暴露自定义 endpoint：runtime 官方协议固定，路径仅作展示占位。
+  "codex-app-server": "app-server://thread",
 };
 
 const PROVIDER_CONNECTION_API_FORMAT_TITLE_IDS: Record<ProviderApiType, string> = {
   "anthropic-messages": "settings.modelProvider.apiFormat.title.anthropicMessages",
   "openai-chat-completions": "settings.modelProvider.apiFormat.title.chatCompletions",
   "openai-responses": "settings.modelProvider.apiFormat.title.responses",
+  "codex-app-server": "settings.modelProvider.apiFormat.title.codexAppServer",
 };
 
 export function resolveProviderConnectionApiFormatOptions(): ProviderApiType[] {

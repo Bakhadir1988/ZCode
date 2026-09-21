@@ -28,19 +28,30 @@ import { createModelTelemetry } from "@zcode/telemetry";
 import {
   createRootTraceContext,
   traceContextToLogContext,
+  SESSION_ENTRY_CODEX_THREAD,
   type TraceContext,
   createSessionId,
   createSessionEvent,
   type ExecutionShellSelection,
   type MessageId,
 } from "@zcode/contracts";
-import { isRemoteWorkspaceIdentity, resolveZCodeRuntimeEnv } from "@zcode/shared";
+import {
+  CODEX_BASE_PROVIDER_ID,
+  isRemoteWorkspaceIdentity,
+  resolveZCodeRuntimeEnv,
+} from "@zcode/shared";
+import {
+  readCodexAccountsRegistry,
+  resolveCodexAccountsFile,
+  resolveZCodeDataBaseDir,
+} from "@zcode/shared/node";
 import {
   ZCODE_ATTACHMENT_FAULT_CODES,
   ZCodeAttachmentFaultError,
 } from "@zcode/shared/zcode-protocol-v4";
 
 import { createModelAdapter } from "../model-factory.js";
+import { CodexModelExecution, resolveCodexCommandFromEnv } from "@zcode/adapters/model";
 import { StartupTimer, startupNow } from "../startup-logging.js";
 import { scheduleStartupLogRetentionCleanup } from "../log-retention.js";
 import type {
@@ -99,6 +110,7 @@ import { collectDisabledPaths } from "../skill-command-overrides.js";
 import { loadPluginAgentProfiles, loadZCodeAgentProfiles } from "../subagents.js";
 import { createRuntimeAiSdkModelExecutionConfig } from "../model-config.js";
 import { ApiProviderModelRuntime } from "./provider-registry-model-runtime.js";
+import { remapLegacyCodexProviderSelection } from "./provider-registry-selection.js";
 import {
   completeAppStartup,
   debugRuntimeConfigResolved,
@@ -198,6 +210,7 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
   let nodeReplBrowserBroker: NodeReplBrowserBroker | undefined;
   let ownedNodeReplBrowserBroker: NodeReplBrowserBroker | undefined;
   let providerModelRuntime: ApiProviderModelRuntime | undefined;
+  let codexExecution: CodexModelExecution | undefined;
   try {
     const storageRoot = resolvePath(configResult.config.storage.dir);
     const cliStorageRoot = getCliStorageRoot(storageRoot);
@@ -464,6 +477,21 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
           sessionId,
         });
       }
+      if (selection?.providerId === CODEX_BASE_PROVIDER_ID) {
+        // Codex 多账号后 base 行只是家族聚合、不再进入 Registry；旧会话保存的
+        // account:openai-codex 选择必须先重映射到 active 账号行，再做下面的严格
+        // 校验，否则 legacy 选择永远无法绑定（执行层的 base→active 回退不可达）。
+        // 账号注册表读取是容错的（缺失/损坏返回 null）；拿不到 active 账号时保持
+        // 原选择，由既有 unbound / stale-selection 流程给出可恢复提示。
+        const accounts = await readCodexAccountsRegistry(
+          resolveCodexAccountsFile(resolveZCodeDataBaseDir(options.env)),
+        );
+        selection = remapLegacyCodexProviderSelection(
+          registry,
+          selection,
+          accounts?.activeAccountId ?? null,
+        );
+      }
       const validation = selection && registry.validateSelection(selection);
       // 只查模型是否存在会把缺档位/已删除的选择重新绑定进 Runtime，
       // 抵消了未绑定初始化。历史恢复不要求可执行模型，只有完整选择可以绑定。
@@ -525,6 +553,64 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
       network: configResult.config.network,
       sourceTitle: options.sourceTitle,
     });
+    // Codex App Server 执行后端：映射 session→{accountId,threadId} 持久化在
+    // session entries（runtime/codex_thread），与 OAuth 状态完全分离；
+    // turn 一律以 workspace cwd 显式执行。
+    const codexThreadEntryId = `${sessionId}:codex-thread`;
+    codexExecution = new CodexModelExecution({
+      command: resolveCodexCommandFromEnv(options.env),
+      env: options.env,
+      threadStore: {
+        async load() {
+          if (!sessionStore.sessionEntries) return null;
+          const entries = await sessionStore.sessionEntries({
+            sessionID: sessionId,
+            type: SESSION_ENTRY_CODEX_THREAD,
+          });
+          const data = entries.at(-1)?.data;
+          if (typeof data !== "object" || data === null) return null;
+          const record = data as { accountId?: unknown; threadId?: unknown };
+          // legacy 数据只有 threadId：归属缺失，执行层归属到当前选择。
+          return {
+            accountId: typeof record.accountId === "string" ? record.accountId : null,
+            threadId: typeof record.threadId === "string" ? record.threadId : null,
+          };
+        },
+        async save(mapping) {
+          const saveEntry = sessionStore.saveSessionEntry;
+          if (!saveEntry) return;
+          const timestamp = Date.now();
+          await saveEntry({
+            id: codexThreadEntryId,
+            sessionID: sessionId,
+            type: SESSION_ENTRY_CODEX_THREAD,
+            touchSession: false,
+            time: { created: timestamp, updated: timestamp },
+            data: { accountId: mapping.accountId, threadId: mapping.threadId },
+          });
+        },
+        async clear() {
+          const saveEntry = sessionStore.saveSessionEntry;
+          if (!saveEntry) return;
+          const timestamp = Date.now();
+          await saveEntry({
+            id: codexThreadEntryId,
+            sessionID: sessionId,
+            type: SESSION_ENTRY_CODEX_THREAD,
+            touchSession: false,
+            time: { created: timestamp, updated: timestamp },
+            data: { accountId: null, threadId: null },
+          });
+        },
+      },
+      resolveTurnContext: () => ({ cwd: workingDirectory }),
+      log: (level, message, error) => {
+        const detail = error instanceof Error ? error.message : String(error ?? "");
+        if (level === "debug") modelLogger.debug(message, { detail });
+        else if (level === "warn") modelLogger.warn(message, { detail });
+        else modelLogger.info(message, { detail });
+      },
+    });
     const modelAdapter =
       options.modelAdapter ??
       createModelAdapter({
@@ -535,6 +621,7 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
         executionConfig: modelExecutionConfig,
         statusSink: modelTelemetry.statusSink,
         streamIdleTimeoutMs: configResult.config.modelStream.idleTimeoutMs,
+        codexExecution,
       });
     if (options.modelAdapter && modelTelemetry.statusSink) {
       modelAdapter.addStatusSink(modelTelemetry.statusSink);
@@ -1115,7 +1202,11 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
           try {
             providerModelRuntime?.dispose();
           } finally {
-            await modelTelemetry.shutdown();
+            try {
+              await codexExecution?.disposeAll();
+            } finally {
+              await modelTelemetry.shutdown();
+            }
           }
         }
       },
@@ -1280,6 +1371,7 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
     };
   } catch (error) {
     providerModelRuntime?.dispose();
+    void codexExecution?.disposeAll();
     void modelTelemetry.shutdown().catch(() => undefined);
     void ownedNodeReplBrowserBroker?.close();
     startupTimer.fail("ZCode app startup failed", error, {
@@ -1290,3 +1382,5 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
     throw error;
   }
 }
+
+

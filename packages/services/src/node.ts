@@ -310,6 +310,7 @@ import { createLocalConversationShareArtifactSource } from "./conversation-share
 import { ConversationShareHttpClient } from "./conversation-share/conversationShareHttpClient.js";
 import { IFileWatcherService } from "./fileWatcher/fileWatcher.js";
 import { IOAuthService } from "./oauth/oauth.js";
+import { ICodexService } from "./codex/codex.js";
 import { IUsageStatsService } from "./usage-stats/usageStats.js";
 import { ICodingPlanSubscriptionService } from "./coding-plan-subscription/codingPlanSubscription.js";
 import { IClientScenesService } from "./client-scenes/clientScenes.js";
@@ -351,6 +352,7 @@ import { TaskIndexRepo } from "./session/taskIndexRepo.js";
 import type { SessionMessageSendRequested } from "#src/session/sessionMailbox.js";
 import { createFileWatcherService } from "./fileWatcher/fileWatcherService.js";
 import { createOAuthService } from "./oauth/oauthService.js";
+import { createCodexService } from "./codex/codexService.js";
 import { isCurrentOAuthCredentialRequest } from "#src/oauth/oauthUnauthorizedRequest.js";
 import { createOAuthProviderLogoutHandler } from "./oauth/oauthProviderLogout.js";
 import { OAuthCredentialRepo } from "./oauth/repo/oauthCredentialRepo.js";
@@ -1405,6 +1407,10 @@ export function createLocalServices(options: {
       }
     },
   });
+  // OpenAI Codex official App Server account service: binary comes from ZCODE_CODEX_BIN,
+  // defaulting to "codex" on PATH. Feeds connection facts to the Account Provider Source;
+  // OAuth credentials never leave the official runtime's per-account CODEX_HOME.
+  const codexService = createCodexService({ command: process.env.ZCODE_CODEX_BIN });
   const accountProviderCredentialStore = createAccountProviderCredentialStore({
     credentialService,
   });
@@ -1553,6 +1559,40 @@ export function createLocalServices(options: {
   });
   const accountProviderConfigSource = createAccountProviderConfigSource({
     configSource: providerConfigRuntime.configService,
+    // Codex 连接事实来自本进程的官方 App Server 账户服务（投影，无凭据）。
+    // 按账号展开：overlay 行 account:openai-codex:<uuid> 在 resolver 侧生成。
+    resolveCodexConnection: async () => {
+      const state = await codexService.getState();
+      const accounts = [];
+      for (const account of state.accounts) {
+        if (account.runtime !== "ready" || !account.connected) {
+          accounts.push({
+            accountId: account.id,
+            connected: false,
+            models: [],
+            disabledModels: [...account.disabledModels],
+          });
+          continue;
+        }
+        try {
+          const models = await codexService.listModels(account.id);
+          accounts.push({
+            accountId: account.id,
+            connected: true,
+            models,
+            disabledModels: [...account.disabledModels],
+          });
+        } catch {
+          accounts.push({
+            accountId: account.id,
+            connected: true,
+            models: [],
+            disabledModels: [...account.disabledModels],
+          });
+        }
+      }
+      return { accounts };
+    },
     readSettings: readAccountProviderSettings,
     async loadCodingPlanApiKey(providerId, family, accountIdentity, forceRefresh) {
       if (isStartPlanModelProviderId(providerId)) return null;
@@ -1600,6 +1640,22 @@ export function createLocalServices(options: {
     onDidUpdateSetting: (listener) => settingService.onDidUpdate(listener),
     refresh: (reason) => accountProviderConfigSource.refresh(reason),
   });
+  // Codex 账号变化（登录/登出/toggle/active）必须重算 account overlay；
+  // 登录链会产生多次事件，尾随去抖避免重复全量刷新。
+  let codexAccountsRefreshTimer: NodeJS.Timeout | null = null;
+  const disposeCodexAccountsSubscription = codexService.onDidChange(() => {
+    if (codexAccountsRefreshTimer) return;
+    codexAccountsRefreshTimer = setTimeout(() => {
+      codexAccountsRefreshTimer = null;
+      try {
+        void accountProviderConfigSource
+          .refresh("codex-accounts-changed")
+          .catch(() => undefined);
+      } catch {
+        // dispose 后调用会同步抛错；错误已由 onDidRefreshError 通道上报。
+      }
+    }, 500);
+  });
   const accountProviderRefreshErrorDispose = accountProviderConfigSource.onDidRefreshError(
     (event) => {
       accountProviderRuntimeLog.warn(undefined, "account provider source refresh failed", {
@@ -1617,6 +1673,8 @@ export function createLocalServices(options: {
     modelSelectionConfiguredDefaultSource,
     disposeModelSelectionConfiguredDefaultSource: () =>
       modelSelectionConfiguredDefaultSource.dispose(),
+    resolveCodexActiveAccountId: () =>
+      codexService.getActiveAccountId().catch(() => null),
     testConnectivity: createProviderSettingsConnectivityTester({
       testModelConnectivity: async (input) => {
         if (!providerConnectivityAgentService) {
@@ -1628,6 +1686,11 @@ export function createLocalServices(options: {
     disposeAccountSource: () => {
       disposeAccountProviderInvalidation();
       accountProviderRefreshErrorDispose();
+      disposeCodexAccountsSubscription.dispose();
+      if (codexAccountsRefreshTimer) {
+        clearTimeout(codexAccountsRefreshTimer);
+        codexAccountsRefreshTimer = null;
+      }
       accountProviderConfigSource.dispose();
     },
   });
@@ -2438,6 +2501,7 @@ export function createLocalServices(options: {
     .register(IConversationShareService, conversationShareService)
     .register(IFileWatcherService, createFileWatcherService())
     .register(IOAuthService, oauthService)
+    .register(ICodexService, codexService)
     .register(
       IUsageStatsService,
       createUsageStatsService({
@@ -2719,6 +2783,7 @@ export function disposeServiceResources(services: ServiceCollection): void {
     services.getOptional(IZCodeSessionService),
     services.getOptional(IFileWatcherService),
     services.getOptional(IOffPeakTaskService),
+    services.getOptional(ICodexService),
   ].filter((service) => service !== undefined);
 
   for (const service of disposableServices) {
@@ -2752,6 +2817,7 @@ export async function disposeServiceResourcesAndWait(services: ServiceCollection
     services.getOptional(IZCodeSessionService),
     services.getOptional(IFileWatcherService),
     services.getOptional(IOffPeakTaskService),
+    services.getOptional(ICodexService),
   ].filter((service) => service !== undefined);
 
   for (const service of disposableServices) {
@@ -2780,3 +2846,4 @@ export async function disposeServiceResourcesAndWait(services: ServiceCollection
     ?.disposeAndWait()
     .catch(() => {});
 }
+

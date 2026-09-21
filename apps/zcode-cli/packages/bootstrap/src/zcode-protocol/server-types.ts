@@ -197,7 +197,7 @@ export function isErrorResponse(message: ZCodeProtocolMessage): message is {
  * 坐标为 NaN 等）无从自纠、会反复瞎试。这里用鸭子类型读 ZodError.issues（不引 zod 依赖），
  * 拼成 `expression: Expected string, received function` 这类可操作提示。
  */
-function summarizeParamsError(error: unknown): string | undefined {
+export function summarizeParamsError(error: unknown): string | undefined {
   const issues = (error as { issues?: Array<{ path?: unknown[]; message?: string }> })?.issues;
   if (!Array.isArray(issues) || issues.length === 0) {
     return undefined;

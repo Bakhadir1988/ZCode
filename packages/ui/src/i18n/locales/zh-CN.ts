@@ -2249,6 +2249,28 @@ const zhCN: Record<string, string> = {
   "settings.plugins.toggle.workspaceDisabled": "已在当前工作区停用 {plugin}（覆盖 User 默认）",
   "settings.plugins.toggle.failed": "无法更新 {plugin}，请重试。",
   "settings.modelProviderDescription": "管理自定义模型供应商，配置后可在聊天时选择使用。",
+  "settings.modelProvider.codex.title": "OpenAI Codex",
+  "settings.modelProvider.codex.description": "连接 ChatGPT 账号以使用 Codex。",
+  "settings.modelProvider.codex.connecting": "等待 ChatGPT 授权…",
+  "settings.modelProvider.codex.connectedWithChatgpt": "已连接 ChatGPT",
+  "settings.modelProvider.codex.cancelLogin": "取消",
+  "settings.modelProvider.codex.loginFailed": "ChatGPT 登录失败，请重试。",
+  "settings.modelProvider.codex.accounts": "账号",
+  "settings.modelProvider.codex.addAccount": "添加账号",
+  "settings.modelProvider.codex.manageAccounts": "管理账号",
+  "settings.modelProvider.codex.emptyState": "尚未连接 ChatGPT 账号。",
+  "settings.modelProvider.codex.disconnectAccount": "断开 {label}",
+  "settings.modelProvider.codex.defaultBadge": "默认",
+  "settings.modelProvider.codex.disabledBadge": "已停用",
+  "settings.modelProvider.codex.accountEnabled": "启用",
+  "settings.modelProvider.codex.accountEnabledLabel": "切换 {label} 的可用性",
+  "settings.modelProvider.codex.setDefault": "设为默认",
+  "settings.modelProvider.codex.setDefaultLabel": "将 {label} 设为默认",
+  "settings.modelProvider.codex.defaultHint":
+    "默认账号仅用于新会话；停用的账号保持连接但不在选择器中显示，其余启用中的账号始终可按会话选择。",
+  "settings.modelProvider.codex.modelToggle": "切换 {account} 的模型 {model}",
+  "settings.modelProvider.codex.modelsFootnote":
+    "模型来自官方 Codex runtime，不可手动添加。关闭的模型不会出现在聊天选择器中。",
   "settings.modelProvider.add": "添加供应商",
   "settings.modelProvider.createCustomProvider": "创建自定义供应商",
   "settings.modelProvider.templateCreateFailed": "创建供应商失败：个人供应商配置格式无效",
@@ -2297,6 +2319,7 @@ const zhCN: Record<string, string> = {
   "settings.modelProvider.apiFormat.short.anthropicMessages": "Anthropic",
   "settings.modelProvider.apiFormat.title.chatCompletions": "Chat Completions",
   "settings.modelProvider.apiFormat.title.responses": "Responses",
+  "settings.modelProvider.apiFormat.title.codexAppServer": "OpenAI Codex(App Server)",
   "settings.modelProvider.apiFormat.title.anthropicMessages": "Anthropic Messages",
   "settings.modelProvider.apiKey": "API Key",
   "settings.modelProvider.apiKeyPlaceholder": "输入 API Key",
@@ -6188,3 +6211,4 @@ const zhCN: Record<string, string> = {
 };
 
 export default zhCN;
+

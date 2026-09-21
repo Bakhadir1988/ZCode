@@ -1399,6 +1399,9 @@ export function createZCodeAgentService(
                 config.toJSON(),
               ]),
             ),
+            ...(snapshot.providerModelRules
+              ? { providerModelRules: snapshot.providerModelRules }
+              : {}),
             states: snapshot.states ?? {},
           },
           zcodeProviderUpdateAccountConfigResultSchema,
@@ -5644,3 +5647,4 @@ export function createZCodeAgentService(
     },
   };
 }
+

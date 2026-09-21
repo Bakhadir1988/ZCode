@@ -49,6 +49,8 @@ import {
   type ChatStartPlanBalanceConfig,
 } from "@/chat-input-toolbar/StartPlanContextBalance.js";
 import { ThoughtLevelCycleControl } from "@/chat-input-toolbar/ThoughtLevelCycleControl.js";
+import { useCodexAccounts } from "@/hooks/useCodexAccount.js";
+import { createCodexAccountProviderId } from "@zcode/shared";
 import { getNextThoughtLevelValue } from "@/chat-input-toolbar/thoughtLevelOptions.js";
 import type { V4ComposerConfigPicker } from "@/v4/composer/configPickerState.js";
 import { useToolbarShortcutBindings } from "@/v4/composer/toolbarShortcuts.js";
@@ -394,6 +396,8 @@ function V4ComposerModelControlsImpl({
   const providerSettingsView =
     providerSettingsRead.state.status === "ready" ? providerSettingsRead.state.view : null;
   const providerSourcesLoading = providerSettingsRead.state.status !== "ready";
+  // Codex 多账号展示 label（picker badge）；缺失频道时 hook 返回空态，不影响其他分组。
+  const { state: codexAccountsState } = useCodexAccounts();
   // 配置面存活服务读（过渡归宿 = 配置面 v4 化）：连接方式选中键喂 BigModel Team Plan 门控豁免。
   const { settings: sharedSettings } = useSettings();
   const {
@@ -754,8 +758,20 @@ function V4ComposerModelControlsImpl({
       teamPlanFallbackLabel: intl.formatMessage({
         id: "settings.modelProvider.connectionMode.teamPlan",
       }),
+      codexAccountLabels: Object.fromEntries(
+        codexAccountsState.accounts.map((account) => [
+          createCodexAccountProviderId(account.id),
+          account.label,
+        ]),
+      ),
+      // 停用账号不进入 chat picker；registry 行保留给既有会话，过滤只发生在这里。
+      codexDisabledAccountProviderIds: new Set(
+        codexAccountsState.accounts
+          .filter((account) => !account.enabled)
+          .map((account) => createCodexAccountProviderId(account.id)),
+      ),
     });
-  }, [displayProvider, intl, modelSelectionView]);
+  }, [codexAccountsState, displayProvider, intl, modelSelectionView]);
 
   // 修复：恢复「管理模型」入口（老版 onManageModels = 打开设置页并定位模型供应商区）。
   const handleOpenModelProviderSettings = useCallback(() => {

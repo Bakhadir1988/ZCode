@@ -3,6 +3,8 @@ export * from "./errors.js";
 export * from "./model-execution.js";
 export * from "./runner.js";
 export * from "./model.js";
+export * from "./codex/codex-model-execution.js";
+export * from "./codex/codex-turn-mapping.js";
 export * from "./retry-policy.js";
 export * from "./workflow-model-failure-policy.js";
 export * from "./transform.js";

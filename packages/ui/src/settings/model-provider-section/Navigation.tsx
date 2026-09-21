@@ -129,7 +129,13 @@ function ModelProviderNavigationButton({
         </span>
         {"provider" in item ? (
           <ProviderStatusIndicator
-            provider={item.type === "preset" ? item.statusProvider : item.provider}
+            provider={
+              item.type === "preset"
+                ? item.statusProvider
+                : item.type === "codex"
+                  ? (item.statusProvider ?? item.provider)
+                  : item.provider
+            }
           />
         ) : null}
       </button>
@@ -209,7 +215,13 @@ function SortableModelProviderNavigationButton({
         </span>
         {"provider" in item ? (
           <ProviderStatusIndicator
-            provider={item.type === "preset" ? item.statusProvider : item.provider}
+            provider={
+              item.type === "preset"
+                ? item.statusProvider
+                : item.type === "codex"
+                  ? (item.statusProvider ?? item.provider)
+                  : item.provider
+            }
           />
         ) : null}
       </div>

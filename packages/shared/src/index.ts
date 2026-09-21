@@ -304,3 +304,19 @@ export * from "./clientConfig.js";
 export * from "./pluginStoreOrdering.js";
 export * from "./session-debug.js";
 export { redactFeedbackText } from "./feedbackPrivacy.js";
+export type {
+  CodexAccountInfo,
+  CodexAccountSnapshot,
+  CodexAccountsState,
+  CodexAuthMode,
+  CodexLoginStartResult,
+  CodexModelDescriptor,
+  CodexRuntimeState,
+  CodexRuntimeUnavailableReason,
+} from "./codex.js";
+export {
+  CODEX_BASE_PROVIDER_ID,
+  createCodexAccountProviderId,
+  parseCodexProviderAccountId,
+} from "./codex.js";
+

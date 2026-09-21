@@ -5,11 +5,15 @@ export const providerApiTypeDataSchema = z.enum([
   "anthropic-messages",
   "openai-chat-completions",
   "openai-responses",
+  // OpenAI Codex 官方 App Server（stateful thread/turn），不走 AI SDK HTTP 管线。
+  "codex-app-server",
 ]);
 export const providerGroupDataSchema = z.enum([
   "standard-personal",
   "zai-family",
   "bigmodel-family",
+  // 官方 App Server 型账号 Provider（Codex）；仅 builtin 声明，不参与用户删除/排序。
+  "codex-family",
 ]);
 export const zhipuAccountModeDataSchema = z.enum([
   "start-plan",
@@ -52,13 +56,28 @@ export const zhipuAccountAccessDataSchema = z
     type: completeZhipuAccountAccessDataSchema.shape.type,
   })
   .strict();
+export const completeCodexAccountAccessDataSchema = z
+  .object({
+    type: z.literal("codex-account"),
+    // ChatGPT 账户已连接（官方 runtime 存在有效登录）；ZCode 不持有任何 OAuth 凭据。
+    connected: z.boolean(),
+  })
+  .strict();
+export const codexAccountAccessDataSchema = z
+  .object({
+    ...sparseShape(completeCodexAccountAccessDataSchema.shape),
+    type: completeCodexAccountAccessDataSchema.shape.type,
+  })
+  .strict();
 export const providerAccessDataSchema = z.discriminatedUnion("type", [
   apiKeyAccessDataSchema,
   zhipuAccountAccessDataSchema,
+  codexAccountAccessDataSchema,
 ]);
 const completeProviderAccessDataSchema = z.discriminatedUnion("type", [
   completeApiKeyAccessDataSchema,
   completeZhipuAccountAccessDataSchema,
+  completeCodexAccountAccessDataSchema,
 ]);
 
 export const completeProviderApiDataSchema = z

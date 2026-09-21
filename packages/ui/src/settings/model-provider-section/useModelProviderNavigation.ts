@@ -9,6 +9,7 @@ import type {
 } from "@zcode/shared";
 import {
   BUILTIN_MODEL_PROVIDER_IDS,
+  CODEX_BASE_PROVIDER_ID,
   isStartPlanModelProviderId,
   resolveModelProviderFamilySpecByProviderId,
   resolveProviderFamilyDomainFromOAuthProvider,
@@ -24,6 +25,7 @@ import {
 import { pickCodingPlanEntitlementProvider } from "@/lib/codingPlanProvider.js";
 import {
   createCodingPlanProviderNodeKey,
+  createCodexProviderNodeKey,
   createCustomProviderNodeKey,
   createPresetProviderNodeKey,
 } from "@/settings/model-provider-section/utils.js";
@@ -178,6 +180,10 @@ export function useModelProviderNavigation({
   );
 
   const navigationGroups = useMemo<ModelProviderNavGroup[]>(() => {
+    const codexBaseProvider =
+      modelProviders.find((provider) => provider.providerId === CODEX_BASE_PROVIDER_ID) ?? null;
+    const codexConnected =
+      codexBaseProvider?.accountState?.availability === "available";
     const groups: ModelProviderNavGroup[] = [
       {
         id: "preset",
@@ -208,6 +214,19 @@ export function useModelProviderNavigation({
             };
           }),
           ...codingPlanItems.filter((item) => isStartPlanModelProviderId(item.presetId)),
+          // OpenAI Codex：单行聚合入口（多账号在右侧面板管理），base 行恒存在。
+          ...(codexBaseProvider
+            ? [
+                {
+                  key: createCodexProviderNodeKey(),
+                  type: "codex" as const,
+                  label: "OpenAI Codex",
+                  provider: codexBaseProvider,
+                  statusProvider: { enabled: true, executable: codexConnected },
+                  statusActive: codexConnected,
+                },
+              ]
+            : []),
         ],
       },
       {
@@ -524,7 +543,7 @@ export function connectionSelectionMatchesNavigationItem(
   selection: ProviderFamilyConnectionSelection,
   item: Exclude<ModelProviderNavGroup["items"][number], { type: "codingPlanLoading" }>,
 ): boolean {
-  if (item.type === "custom") return false;
+  if (item.type === "custom" || item.type === "codex") return false;
   const familySpec = resolveModelProviderFamilySpecByProviderId(item.presetId ?? "");
   if (familySpec?.id !== family) return false;
   if (selection.kind === "start-plan") {

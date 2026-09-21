@@ -1,4 +1,5 @@
 import type { ModelId, ProviderId } from "./config/index.js";
+import { parseAccountProviderModelRules } from "./config/schema.js";
 import {
   ProviderRegistry,
   type ModelSelection,
@@ -227,6 +228,9 @@ export class ProviderRegistryService {
           personalModels: config.personalModels,
           accountProviders: account.providers,
           accountStates: account.states,
+          accountModels: account.providerModelRules
+            ? parseAccountProviderModelRules(account.providerModelRules)
+            : undefined,
           personalProviderOrder: config.personalProviderOrder,
         });
         this.#registry.replace(resolution.registryProviders, [...reasons].join(","));

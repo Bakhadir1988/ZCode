@@ -1,5 +1,10 @@
 import type { Event } from "@zcode/rpc";
-import { ServiceChannels } from "@zcode/shared";
+import {
+  CODEX_BASE_PROVIDER_ID,
+  ServiceChannels,
+  createCodexAccountProviderId,
+  parseCodexProviderAccountId,
+} from "@zcode/shared";
 import {
   type ModelConfigObject,
   type ModelId,
@@ -213,6 +218,10 @@ export function createModelSelectionService(
   facade: ModelSelectionFacade,
   ensureReady: () => Promise<void> = async () => {},
   configuredDefaultSource?: ModelSelectionConfiguredDefaultSource,
+  options: {
+    /** Codex 新会话默认账号；仅当 configured default 指向 codex 家族时重映射。 */
+    resolveCodexActiveAccountId?: () => Promise<string | null>;
+  } = {},
 ): IModelSelectionService & { dispose(): void } {
   const log = createServiceLogger("model-selection");
   let revision = 0;
@@ -223,9 +232,14 @@ export function createModelSelectionService(
     if (disposed) throw new Error("ModelSelectionService 已 dispose");
     const configuredDefault = await configuredDefaultSource?.read();
     if (disposed) throw new Error("ModelSelectionService 已 dispose");
-    const base = facade.getView(configuredDefault);
+    const effectiveDefault = await remapCodexDefaultToActiveAccount(
+      configuredDefault,
+      facade,
+      options.resolveCodexActiveAccountId,
+    ).catch(() => configuredDefault);
+    const base = facade.getView(effectiveDefault);
     if (revision < base.revision) revision = base.revision;
-    return facade.getView(configuredDefault, revision, input);
+    return facade.getView(effectiveDefault, revision, input);
   };
   const emit = (): void => {
     if (disposed) return;
@@ -267,5 +281,43 @@ function toEvent<T>(subscribe: (listener: (event: T) => void) => () => void): Ev
   return (listener) => {
     const dispose = subscribe(listener);
     return { dispose };
+  };
+}
+
+/**
+ * Codex configured default 跟随 active 账号：仅当默认选择指向 codex 家族
+ *（base 或任一账号行）时，把 providerId 换到 active 账号行；modelId 在目标行
+ *可用则保留，否则取目标行首个模型；reasoning 档位只在目标支持时保留。
+ * 已有会话的选择不受影响（只影响 preferredSelection 新草稿默认值）。
+ */
+async function remapCodexDefaultToActiveAccount(
+  configuredDefault: ModelSelection | undefined,
+  facade: ModelSelectionFacade,
+  resolveCodexActiveAccountId: (() => Promise<string | null>) | undefined,
+): Promise<ModelSelection | undefined> {
+  if (!configuredDefault || !resolveCodexActiveAccountId) return configuredDefault;
+  const isCodexFamily =
+    configuredDefault.providerId === CODEX_BASE_PROVIDER_ID ||
+    parseCodexProviderAccountId(configuredDefault.providerId) !== null;
+  if (!isCodexFamily) return configuredDefault;
+  const activeAccountId = await resolveCodexActiveAccountId();
+  if (!activeAccountId) return configuredDefault;
+  const targetRowId = createCodexAccountProviderId(activeAccountId);
+  if (configuredDefault.providerId === targetRowId) return configuredDefault;
+  const probe = facade.getView(undefined);
+  const row = probe.providers.find((provider) => provider.providerId === targetRowId);
+  if (!row || row.models.length === 0) return configuredDefault;
+  const targetModel =
+    row.models.find((model) => model.modelId === configuredDefault.modelId) ?? row.models[0]!;
+  const requestedLevel = configuredDefault.options?.reasoningLevel;
+  const keepOptions =
+    requestedLevel !== undefined &&
+    targetModel.config.optionSpecs?.reasoningLevel?.values?.includes(requestedLevel)
+      ? configuredDefault.options
+      : undefined;
+  return {
+    providerId: targetRowId,
+    modelId: targetModel.modelId,
+    ...(keepOptions ? { options: keepOptions } : {}),
   };
 }

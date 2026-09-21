@@ -215,6 +215,10 @@ export { IFileWatcherService } from "./fileWatcher/fileWatcher.js";
 // OAuth service — IOAuthService is both a type (interface) and value (descriptor)
 export { IOAuthService } from "./oauth/oauth.js";
 
+// OpenAI Codex 官方 App Server 账户连接服务；接口/描述符 browser-safe。
+// 实现（spawn 子进程）是 Node-only，与其它 create*Service 一样只在 ./node 装配出口导出。
+export { ICodexService } from "./codex/codex.js";
+
 // UsageStats service — IUsageStatsService is both a type (interface) and value (descriptor)
 export { IUsageStatsService } from "./usage-stats/usageStats.js";
 

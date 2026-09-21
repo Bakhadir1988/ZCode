@@ -103,6 +103,8 @@ export const ServiceChannels = {
   FileWatcher: "file-watcher",
   /** OAuth 认证服务 */
   OAuth: "oauth",
+  /** OpenAI Codex 官方 App Server 账户连接（登录/状态/登出由官方 runtime 承载） */
+  Codex: "codex",
   /** 新 Provider Config 的设置读写 Facade */
   ProviderSettings: "provider-settings",
   /** 新 Provider Registry 的模型选择 Facade */
